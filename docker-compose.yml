@@ -1,0 +1,72 @@
+version: '3.9'
+
+services:
+  nginx:
+    image: nginx:1.25
+    container_name: hris_remaster_nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - nextapp
+      - absensi
+      - payroll
+
+  nextapp:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: hris_remaster_nextapp
+    env_file:
+      - ./.env
+    environment:
+      - NEXT_PUBLIC_APP_URL=http://localhost:8080/app
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    command: npm run dev
+    ports:
+      - "3000:3000"
+
+  absensi:
+    build:
+      context: ./containers/php-absensi
+    container_name: hris_remaster_absensi
+    env_file:
+      - ./.env
+    volumes:
+      - ./legacy/absensi:/var/www/html
+
+  payroll:
+    build:
+      context: ./containers/php-payroll
+    container_name: hris_remaster_payroll
+    env_file:
+      - ./.env
+    volumes:
+      - ./legacy/payroll:/var/www/html
+
+  cron:
+    build:
+      context: ./containers/php-absensi
+    container_name: hris_remaster_cron
+    env_file:
+      - ./.env
+    volumes:
+      - ./legacy/absensi:/var/www/html
+    entrypoint: ["bash", "-lc", "while true; do php crontab/sinkronabsensi.php; sleep ${CRON_INTERVAL:-3600}; done"]
+    depends_on:
+      - absensi
+
+  llm:
+    image: ghcr.io/jmorganca/ollama:latest
+    container_name: hris_remaster_llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:
+

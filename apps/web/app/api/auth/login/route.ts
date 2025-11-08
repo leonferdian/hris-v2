@@ -1,0 +1,59 @@
+import { NextResponse } from 'next/server';
+import { verifyLegacyUser, issueJwt, sanitizeLegacyUser } from '@/lib/auth';
+
+type LoginPayload = {
+  username?: string;
+  email?: string;
+  password?: string;
+};
+
+export async function POST(request: Request) {
+  try {
+    const payload = (await request.json().catch(() => ({}))) as LoginPayload;
+    const identifier = (payload.username ?? payload.email ?? '').trim();
+    const password = payload.password;
+
+    console.log('🔐 Login attempt:', { identifier, hasPassword: !!password });
+
+    if (!identifier || !password) {
+      console.log('❌ Missing credentials');
+      return NextResponse.json({ error: 'Username/email dan password wajib diisi.' }, { status: 400 });
+    }
+
+    console.log('🔍 Verifying user credentials...');
+    const user = await verifyLegacyUser(identifier, password);
+
+    if (!user) {
+      console.log('❌ Invalid credentials for:', identifier);
+      return NextResponse.json({ error: 'Kredensial tidak valid.' }, { status: 401 });
+    }
+
+    console.log('✅ User verified:', user.username);
+    const token = issueJwt(user);
+    const response = NextResponse.json({ ok: true, user: sanitizeLegacyUser(user) });
+
+    const secure = process.env.NODE_ENV === 'production';
+    response.cookies.set({
+      name: 'auth',
+      value: token,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure,
+      path: '/',
+      maxAge: 60 * 60 * 12,
+    });
+
+    console.log('✅ Login successful, token issued');
+    return response;
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    return NextResponse.json(
+      { 
+        error: 'Terjadi kesalahan saat login.',
+        details: error instanceof Error ? error.message : String(error)
+      },
+      { status: 500 }
+    );
+  }
+}
+
